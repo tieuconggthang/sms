@@ -5,6 +5,7 @@ from typing import Optional, Tuple
 import re
 import serial
 import logging
+from com.nasa.infra.utils.codec_utils import UssdUtils
 @dataclass(frozen=True)
 class SerialConfig:
     port: str
@@ -82,7 +83,44 @@ class SerialModem:
             self.logger.exception("USSD FAILED port=%s code=%s err=%s", self.cfg.port, code, e)
             return ""
 
+    def send_ussd_wait(self, code: str, dcs: int = 15, timeout_s: float = 12.0) -> str:
+        """
+        Gửi USSD và CHỜ đến khi thấy +CUSD: ... (vì +CUSD đến sau OK).
+        Trả về toàn bộ buffer thu được.
+        """
+        with self._lock:
+            try:
+                self.ser.reset_input_buffer()
+                self.ser.reset_output_buffer()
+            except Exception:
+                pass
 
+            # gửi lệnh
+            cmd = f'AT+CUSD=1,"{code}",{dcs}\r'
+            self.ser.write(cmd.encode("utf-8"))
+            self.ser.flush()
+
+            end = time.time() + timeout_s
+            buf = ""
+            saw_ok = False
+
+            while time.time() < end:
+                buf += self._read_all()
+
+                # có thể OK tới trước
+                if "\nOK" in buf or buf.strip().endswith("OK"):
+                    saw_ok = True
+
+                # +CUSD là cái ta cần
+                if "+CUSD:" in buf:
+                    return buf
+
+                # lỗi thì trả luôn
+                if "ERROR" in buf or "+CME ERROR" in buf:
+                    return buf
+
+            # timeout: trả buf để bạn log xem đã nhận gì
+            return buf
     def cancel_ussd(self) -> str:
         return self.send("AT+CUSD=2", max_wait_seconds=2.0)
 
@@ -108,12 +146,14 @@ class SerialModem:
         resp = self.send("AT+CNUM", max_wait_seconds=3.0)
         return self.parse_number(resp)
 
-    def get_msisdnby101(self) -> Optional[str]:
+    def get_MSISDN101(self) -> Optional[str]:
         # best-effort: USSD code (tuỳ nhà mạng)
-        resp = self.send_ussd("*101#", timeout_s=12.0)
-        mode, text, _ = self.parse_ussd(resp)
+        resp = self.send_ussd_wait("*101#", timeout_s=12.0)
+        mode, text, dcs = self.parse_ussd(resp)
         if text:
             # bạn có thể regex bóc số ở đây nếu cần
+            text = UssdUtils.normalize_text(text, dcs)
+            msisdn = UssdUtils.extract_msisdn(text)
             return text
         return ""
 

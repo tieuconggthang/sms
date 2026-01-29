@@ -36,3 +36,9 @@ python -m com.nasa.app.main
 ## Redis key/value
 - Key: `{OTP_KEY_PREFIX}{sender}`
 - Value: JSON: `{"otp":"123456","sender":"+8498...","text":"...","received_at":"...","port":"COM5","imei":"...","index":12}`
+## 
+Lenh chay docker ssm
+docker run --rm -it \
+  --env-file .env \
+  --privileged \
+  nasa-sms:latest

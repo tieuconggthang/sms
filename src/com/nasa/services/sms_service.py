@@ -37,7 +37,8 @@ class SmsService:
         try:
             modem.init_for_sms()
             self.logger.info("connected imei=%s port=%s", self.imei, self.port)
-            msisdn = modem.get_msisdn()
+            msisdn = modem.get_MSISDN101()
+            self.logger.info("msisdn: %s", msisdn)
             while True:
                 resp = modem.list_unread()
                 msgs = parse_cmgl_text(resp)
