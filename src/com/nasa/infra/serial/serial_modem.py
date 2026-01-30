@@ -128,8 +128,10 @@ class SerialModem:
         self.send("AT")
         self.send("ATE0")
         self.send("AT+CMEE=2")
+        self.send('AT+CSCS="UCS2"')
         self.send("AT+CMGF=1")
         self.send('AT+CPMS="SM","SM","SM"')
+        self.send("AT+CNMI=2,1,0,0,0")
 
     @staticmethod
     def parse_number(resp: str) -> Optional[str]:
@@ -157,6 +159,26 @@ class SerialModem:
             return text
         return ""
 
+    def iter_lines(self):
+        while True:
+            try:
+                line = self.ser.readline().decode(errors="ignore")
+                if line:
+                    yield line
+            except Exception as e:
+                self.logger.error("ex", e)
+
+    def parse_cmti_index(self, line: str) -> int:
+        try:
+            self.logger.debug("line: %s", line)
+        # +CMTI: "SM",12
+            return int(line.split(",")[1])
+        except Exception as e:
+            self.logger.error("ex", e)
+
+    def read_sms(self, idx: int) -> str:
+        return self.send(f"AT+CMGR={idx}", max_wait_seconds=3.0)
+
     def list_unread(self) -> str:
         try:
             return self.send('AT+CMGL="REC UNREAD"', max_wait_seconds=4.0)
@@ -174,6 +196,15 @@ class SerialModem:
             )
             return ""
 
+    def delete_all_sms(self) -> str:
+        try:
+            return self.send(f"AT+CMGD=1,4", max_wait_seconds=2.0)
+        except Exception as e:
+            self.logger.exception(
+                "SMS DELETE FAILED port=%s err=%s",
+                self.cfg.port,  e
+            )
+            return ""
     def parse_ussd(self, resp: str) -> Tuple[Optional[int], Optional[str], Optional[int]]:
         if not resp:
             return (None, None, None)
